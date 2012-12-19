@@ -1,0 +1,42 @@
+[%#
+  # This Source Code Form is subject to the terms of the Mozilla Public
+  # License, v. 2.0. If a copy of the MPL was not distributed with this
+  # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+  #
+  # Copyright (C) 2012 Jolla Ltd.
+  # Contact: Pami Ketolainen <pami.ketolainen@jollamobile.com>
+  #%]
+
+[% PROCESS "global/field-descs.none.tmpl" %]
+[% SET fields = [] %]
+[% FOREACH fname IN values.keys %]
+    [% fields.push({
+        name => fname,
+        desc => field_descs.$fname OR $fname
+        }) %]
+[% END %]
+[% fields = fields.sort('desc') %]
+
+<table>
+    <tr>
+    [% FOREACH field IN fields %]
+        <td style="vertical-align:top; padding: 5px;">
+            <b>[% field.desc FILTER html %]</b>
+            <table>
+            [% FOREACH value IN values.${field.name} %]
+                <tr>
+                    <td>[% value FILTER html %]</td>
+                    <td><input type="checkbox"
+                            [% IF subscribed.${field.name}.$value %]
+                               checked="checked"
+                            [% END %]
+                               name="[% field.name FILTER html %]"
+                               value="[% value FILTER html %]"/><br/>
+                    </td>
+                </tr>
+            [% END %]
+            </table>
+        </td>
+    [% END %]
+    </tr>
+</table>
