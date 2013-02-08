@@ -15,6 +15,8 @@ use Bugzilla::Extension::SubscribeField::Util;
 
 use Bugzilla::Constants;
 
+use List::MoreUtils qw(any);
+
 our $VERSION = '0.01';
 
 # "unique" id for email recipient relationship type
@@ -141,6 +143,28 @@ sub bugmail_recipients {
         for my $uid (@$subscribers) {
             $recipients->{$uid}->{+REL_SUBSCRIBER} = 1;
         }
+    }
+}
+
+sub object_end_of_update {
+    my ($self, $args) = @_;
+    my ($obj, $changes) = @$args{qw(object changes)};
+    if ($obj->isa('Bugzilla::Field::ChoiceInterface') ||
+            $obj->isa('Bugzilla::Keyword')) {
+        my $field = $obj->isa('Bugzilla::Keyword') ? 'keywords' :
+                                                     $obj->field->name;
+        return unless (
+            any {$field eq $_} @{Bugzilla->params->{subscription_fields}});
+        my $change = (
+            any {$field eq $_} qw(keywords classification product component)) ?
+                $changes->{name} :
+                $changes->{value};
+        return unless (defined $change);
+        Bugzilla->dbh->do(
+            'UPDATE field_subscriptions '.
+            'SET value = ? '.
+            'WHERE field = ? AND value = ?',
+            undef, ($change->[1], $field, $change->[0]));
     }
 }
 
