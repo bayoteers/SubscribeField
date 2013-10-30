@@ -15,13 +15,20 @@ use Bugzilla::Config::Common;
 use Bugzilla::Constants;
 
 sub get_param_list {
-    my $ftypes = [FIELD_TYPE_SINGLE_SELECT, FIELD_TYPE_MULTI_SELECT, FIELD_TYPE_KEYWORDS];
-    my @fields = sort(map {$_->name} @{Bugzilla->fields({type => $ftypes})});
+    my $dbh = Bugzilla->dbh;
+    my $fields = $dbh->selectcol_arrayref(
+        "SELECT name FROM fielddefs WHERE obsolete = 0 AND ".
+        $dbh->sql_in('type', [
+            FIELD_TYPE_SINGLE_SELECT,
+            FIELD_TYPE_MULTI_SELECT,
+            FIELD_TYPE_KEYWORDS,
+            ])
+    );
     return (
         {
             name => 'subscription_fields',
             type => 'm',
-            choices => \@fields,
+            choices => $fields,
             default => [],
         },
     );
