@@ -13,6 +13,7 @@ use base qw(Bugzilla::Extension);
 
 use Bugzilla::Extension::SubscribeField::Util;
 
+use Bugzilla::Config qw(write_params);
 use Bugzilla::Constants;
 
 use List::MoreUtils qw(any);
@@ -146,11 +147,35 @@ sub bugmail_recipients {
     }
 }
 
+sub object_before_delete {
+    my ($self, $args) = @_;
+    my $obj = $args->{object};
+    if ($obj->isa('Bugzilla::Field::ChoiceInterface') ||
+            $obj->isa('Bugzilla::Keyword')) {
+        # Remove subscriptions when field value is removed
+        my $field = $obj->isa('Bugzilla::Keyword') ? 'keywords' :
+                                                     $obj->field->name;
+        return unless (any {$field eq $_}
+                @{Bugzilla->params->{subscription_fields}});
+        my $value = $obj->name;
+        Bugzilla->dbh->do(
+            'DELETE FROM field_subscriptions WHERE field = ? AND value = ?',
+            undef, $field, $value);
+    } elsif ($obj->isa('Bugzilla::Field')) {
+        # Remove subscriptions when field is removed
+        my $field = $obj->name;
+        Bugzilla->dbh->do(
+            'DELETE FROM field_subscriptions WHERE field = ?',
+            undef, $field);
+    }
+}
+
 sub object_end_of_update {
     my ($self, $args) = @_;
     my ($obj, $changes) = @$args{qw(object changes)};
     if ($obj->isa('Bugzilla::Field::ChoiceInterface') ||
             $obj->isa('Bugzilla::Keyword')) {
+        # Update subscriptions when field value is changed
         my $field = $obj->isa('Bugzilla::Keyword') ? 'keywords' :
                                                      $obj->field->name;
         return unless (
@@ -165,6 +190,68 @@ sub object_end_of_update {
             'SET value = ? '.
             'WHERE field = ? AND value = ?',
             undef, ($change->[1], $field, $change->[0]));
+    } elsif ($obj->isa('Bugzilla::Field') && $obj->obsolete &&
+            defined $changes->{obsolete})
+    {
+        # Update subscript_fields param when field is set as obsolete.
+        my $field = $obj->name;
+        my @old_fields = @{Bugzilla->params->{subscription_fields}};
+        my @new_fields = grep {$field ne $_} @old_fields;
+        if (scalar @old_fields != scalar @new_fields) {
+            Bugzilla->params->{subscription_fields} = \@new_fields;
+            write_params();
+        }
+    }
+}
+
+# Helper for sanity check and repair for getting invalid subscriptions
+sub _get_bad_subscriptions {
+    my @fields = @{Bugzilla->params->{subscription_fields}};
+    my $dbh = Bugzilla->dbh;
+    if (@fields) {
+        my $query = "SELECT * FROM field_subscriptions WHERE ".
+            "field NOT IN ('".join("','", @fields)."') ";
+        foreach my $field (@fields) {
+            my @values = $field eq "keywords" ?
+                Bugzilla::Keyword->get_all() :
+                @{Bugzilla->fields({by_name=>1})->{$field}->legal_values};
+            $query .= "OR (field = '$field' AND value NOT IN ('"
+                .join("','", map {$_->name} @values)."'))\n";
+        }
+
+        return $dbh->selectall_hashref($query, "id");
+    } else {
+        return $dbh->selectall_hashref(
+            "SELECT * FROM field_subscriptions", "id");
+    }
+}
+
+sub sanitycheck_check {
+    my ($self, $args) = @_;
+    my $status = $args->{'status'};
+    $status->('subscribefield_check');
+
+    my $bad_subs = _get_bad_subscriptions();
+    if (%$bad_subs) {
+        $status->('subscribefield_check_alert',
+            {subs => $bad_subs}, 'alert');
+        $status->('subscribefield_check_prompt');
+    }
+}
+
+sub sanitycheck_repair {
+    my ($self, $args) = @_;
+
+    my $cgi = Bugzilla->cgi;
+    my $dbh = Bugzilla->dbh;
+    my $status = $args->{'status'};
+    if ($cgi->param('subscribefield_repair')) {
+        $status->('subscribefield_repair_start');
+        my $bad_subs = _get_bad_subscriptions();
+        my @ids = keys %$bad_subs;
+        $dbh->do("DELETE FROM field_subscriptions WHERE ".
+            $dbh->sql_in('id', \@ids));
+        $status->('subscribefield_repair_end');
     }
 }
 

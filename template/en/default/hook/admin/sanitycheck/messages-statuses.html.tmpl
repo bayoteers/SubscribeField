@@ -1,0 +1,30 @@
+[%# This Source Code Form is subject to the terms of the Mozilla Public
+  # License, v. 2.0. If a copy of the MPL was not distributed with this
+  # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+  #
+  # Copyright (C) 2014 Jolla Ltd.
+  # Contact: Pami Ketolainen <pami.ketolainen@jolla.com>
+  #%]
+
+[% IF san_tag == "subscribefield_check" %]
+    Checking for bad SubscribeField subscriptions.
+
+[% ELSIF san_tag == "subscribefield_check_alert" %]
+    Bad field subscriptions:
+    [% FOREACH sub IN subs.values() -%]
+        [% sub.user_id FILTER none %]: [% sub.field FILTER html %]/[% sub.value FILTER html %]
+        [%- ", " UNLESS loop.last %]
+    [%- END %]
+
+[% ELSIF san_tag == "subscribefield_check_prompt" %]
+    <a href="sanitycheck.cgi?subscribefield_repair=1&amp;token=
+           [%- issue_hash_token(['sanitycheck']) FILTER uri %]">
+           Click here to remove those</a>
+
+[% ELSIF san_tag == "subscribefield_repair_start" %]
+    Removing bad subscriptions...
+
+[% ELSIF san_tag == "subscribefield_repair_end" %]
+    Done
+
+[% END %]
